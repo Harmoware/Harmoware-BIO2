@@ -8,6 +8,20 @@ class OperaImage:
         self.opera = operaDB
         self.tables = 'driveragent_videofile'
         self.start_datetime = 0
+        self.frontfile = 'picamera2'
+        self.eyefile = 'picamera1'
+
+    def get_VideoFromTripList(self, DataList):
+        df = {}
+        for s in DataList['sensor']:
+            JST = timezone(timedelta(hours=+9), 'JST')
+            if( s['name'] == self.frontfile ):
+                df['front'] = cv2.VideoCapture(s['file_path'])
+
+            if( s['name'] == self.eyefile ):
+                df['eye'] = cv2.VideoCapture(s['file_path'])
+
+        return df
 
     def get_VideoLists(self, df_tripLists, l):
         #Get video file name

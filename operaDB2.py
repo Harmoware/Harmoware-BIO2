@@ -17,6 +17,7 @@ class OperaDB2:
         self.cur = self.conn.cursor()
         self.s3dir = s3
         self.triptable = 'data_logs'
+        self.numSensor = {'meidai':5, 'aioi':3, 'arc':3 }
 
     def getDB_XML(self,file,dbname):
         db_tree = ET.ElementTree(file=file)
@@ -77,7 +78,7 @@ class OperaDB2:
         query = 'SELECT * FROM ' + tables
         logid_conditions = ' WHERE data_log_id = ' + str(log_id)
         test_opt = ''
-        #test_opt = ' ORDER BY save_time ASC LIMIT 100'
+        #test_opt = ' ORDER BY serialtime ASC LIMIT 100'
         query = query + logid_conditions + test_opt + ';'
         #query = query + datetime_conditions + ';'
         print(query)
@@ -145,3 +146,86 @@ class OperaDB2:
         column_names, df_tripLists = self.get_DataFrame( query )
         #print(df_tripLists)
         return df_tripLists
+
+    def get_DataFromLogIDext(self, tables, log_id, ext):
+        query = 'SELECT * FROM ' + tables
+        logid_conditions = ' WHERE data_log_id = ' + str(log_id)
+        test_opt = ' AND (serialtime DIV 10)%10 = 0 '
+        #test_opt = 'ORDER BY serialtime ASC LIMIT 100'
+        query = query + logid_conditions + ' AND ' + ext + ' ' + test_opt + ';'
+        print(query)
+
+        column_names, df = self.get_DataFrame( query )
+        #print(df_tripLists)
+        return column_names, df
+
+    def get_DataListFromTrip(self, tripLists):
+        #search sensor data
+        flagUsed=[]
+        for i in range(len(tripLists['sensor_name'])):
+            flagUsed.append( 0 )
+
+        tripArray = []
+        for i in range(len(tripLists['sensor_name'])):
+            if( flagUsed[i] == 1 ):
+                continue
+
+            trip = {}
+            #calc timestamp
+            JST = timezone(timedelta(hours=+9), 'JST')
+            start_date = pd.Timestamp(tripLists['log_date'][i].replace(tzinfo=JST))
+
+            #Set trip Initially
+            trip['time'] = tripLists['log_date'][i]
+            trip['oc_id'] = tripLists['oc_id'][i]
+            trip['start_timestamp'] = start_date.timestamp()
+
+            sensor = {}
+            sensor['name'] = tripLists['sensor_name'][i]
+            sensor['data_id'] = tripLists['id'][i]
+            sensor['file_path'] = tripLists['file_path'][i]
+            flagUsed[i] = 1
+
+            sensorArray = []
+            sensorArray.append(sensor)
+            for i in range(i+1, len(tripLists['sensor_name'])):
+                start_date = pd.Timestamp(tripLists['log_date'][i].replace(tzinfo=JST))
+                sensor = {}
+                if( trip['start_timestamp'] - 5*60 < start_date.timestamp() and start_date.timestamp() < trip['start_timestamp'] + 5*60 ):
+                    #check multiple
+                    for s in sensorArray:
+                        if( s['name'] == tripLists['sensor_name'][i]):
+                            print('Warning: Already find same sonser :' + str( tripLists['sensor_name'][i] ))
+                            break
+
+                    sensor['name'] = tripLists['sensor_name'][i]
+                    sensor['data_id'] = tripLists['id'][i]
+                    sensor['time'] = tripLists['log_date'][i]
+                    sensor['file_path'] = tripLists['file_path'][i]
+                    sensorArray.append(sensor)
+                    flagUsed[i] = 1
+
+            #check sensor num
+            trip['sensor_num_err'] = 1
+            if( len(sensorArray) == self.numSensor[str(trip['oc_id'])] ):
+                trip['sensor_num_err'] = 0
+
+            trip['sensor'] = sensorArray
+            tripArray.append( trip )
+
+        return tripArray
+
+    def viz_DataLists(self, dataLists):
+        #print
+        id=0
+        for ta in dataLists:
+            print( str(id) + ' ' + str(ta['time']) + ' : '  + str(ta['oc_id']))
+            if( ta['sensor_num_err'] == 1):
+                print( 'Warning: error a number of sensor file ')
+
+            for sensor in ta['sensor']:
+                print( sensor )
+                print( str( sensor['name'] ) + ' ' + str( sensor['data_id']) )
+
+            print()
+            id=id+1
